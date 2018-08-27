@@ -57,6 +57,73 @@ sub main {
     my %collections = (weatherData => {});
 
     load_mongo_data(\%collections);
+    #buildCreateTableStatement(\%collections);
+
+}
+
+sub buildCreateTableStatement {
+    my $collections = shift;
+
+    my %collection_profile = ();
+
+    foreach my $collection_name (keys %$collections) {
+        my $collection = $G_mdb->get_collection($collection_name);
+
+        my $query_result = $collection->find({});
+
+        my %collection_fields = ();
+        while (my $next = $query_result->next) {
+            foreach my $field (keys %$next) {
+                my $data = $next->{$field};
+
+                if (exists $mysql_illegal_fieldnames{ $field}) {
+                    $field .= '1';
+                }
+
+                if (not exists $collection_fields{ $field}) {
+                    my $typ = ref $data;
+
+                    if ($typ eq 'DateTime') {
+                        $collection_fields{$field} = 'DateTime';
+                    }
+                    elsif ($typ eq '') {
+                        $collection_fields{$field} = "varchar";
+                    }
+                    elsif ($typ eq 'MongoDB::OID') {
+                        next;
+                    }
+                    else {
+                        warn "'$field' ignorierter Typ '$typ'\n";
+                    }
+                }
+            }
+        }
+        $collection_profile{$collection_name}{fields} = \%collection_fields;
+    }
+
+    convertProfile2createTable(\%collection_profile);
+
+    foreach my $table (keys %collection_profile) {
+        print $collection_profile{$table}{createtable} . "\n";
+    }
+}
+
+sub convertProfile2createTable {
+    my $profile = shift;
+
+    foreach my $tablename (keys %$profile) {
+        my $create_table_sql = "create table `$tablename` \n(";
+
+        my $table_fields = '';
+        foreach my $fieldname (keys %{$profile->{$tablename}{fields}}) {
+            $table_fields .= $fieldname . " varchar(255) DEFAULT NULL,\n";
+        }
+
+        $table_fields =~ s/.\n$//mg;
+        $create_table_sql .= $table_fields . ')';
+
+        $profile->{$tablename}{createtable} = $create_table_sql;
+    }
 }
 
 sub load_mongo_data {
